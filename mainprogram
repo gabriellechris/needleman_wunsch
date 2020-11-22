@@ -1,0 +1,270 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <cstring>
+#include <cstdlib>
+#include <limits>
+#include <sstream>
+#include <map>
+#include <iomanip>
+#include "header.h"
+
+using namespace std;
+
+NeedlemanWunsch::NeedlemanWunsch(string dna_a, string dna_b)
+{
+	this->_dna_a = dna_a;
+	this->_dna_b = dna_b;
+
+	this->_length_of_a = dna_a.length();
+	this->_length_of_b = dna_b.length();
+
+	this->_similarity = 0;
+
+	this->_similarity_matrix = new int*[this->_length_of_a + 2];
+	for (int i = 0; i < (this->_length_of_a + 1); i++)
+	{
+		this->_similarity_matrix[i] = new int[this->_length_of_b + 2];
+	}
+
+	for (int i = 0; i < _length_of_a; i++)
+	{
+		for (int j = 0; j < _length_of_a; j++)
+		{
+			_similarity_matrix[i][j] = 0;
+		}
+	}
+}
+
+NeedlemanWunsch::~NeedlemanWunsch()
+{
+	for (int i = 0; i < (_length_of_a + 2); i++)
+	{
+		delete[] this->_similarity_matrix[i];
+	}
+	delete[] this->_similarity_matrix;
+}
+
+// SIMILARITY MATRIX
+void NeedlemanWunsch::calculate_similarity()
+{
+	enum AminoAcid amino = MINSCORE;
+	int gap_penalty = _subsitition_matrix[0][amino];
+	for (int i = 0; i < (_length_of_a + 1); i++)
+	{
+		_similarity_matrix[i][0] = i * gap_penalty;
+	}
+
+	for (int j = 0; j < (_length_of_a + 1); j++)
+	{
+		_similarity_matrix[0][j] = j * gap_penalty;
+	}
+
+	int match = 0, insert = 0, del = 0 , max = 0, selected = 0;
+	for (int i = 1; i < _length_of_a + 1; i++)
+	{
+		for (int j = 1; j < _length_of_b + 1; j++)
+		{
+			match = _similarity_matrix[i - 1][j - 1] + 
+				_subsitition_matrix[_dna_int_map[_dna_a[i - 1] ] ][_dna_int_map[_dna_b[j - 1] ] ];
+			del = _similarity_matrix[i - 1][j] + gap_penalty;
+			insert = _similarity_matrix[i][j - 1] + gap_penalty;
+
+			max = (match < del) ? del : match;
+			selected = ((max < insert) ? insert : max);
+
+			_similarity_matrix[i][j] = selected;
+		}
+	}
+}
+
+// BLOSUM62 MATRIX
+void NeedlemanWunsch::populate_subs_matrix(std::string subs_matrix_file)
+{
+	fstream subs_matrix;
+	subs_matrix.open(subs_matrix_file.c_str());
+	if (!subs_matrix)
+	{
+		cerr << "Error (3): Substition matrix file not found! \n";
+		exit(3);
+	}
+	string line, parsed;
+	int i = 0, j = 0;
+	while (std::getline(subs_matrix, line) )
+	{
+		if (line[0] != '#')
+		{
+			istringstream iss(line);
+
+			j = 0;
+			while (getline(iss, parsed, ' '))
+			{
+				if (parsed != "") 
+				{
+					if (i == 0) 
+					{
+						_dna_int_map.insert(pair<char, int>(parsed[0], j));
+					}
+					if (j > 0 && i > 0)
+					{
+						_subsitition_matrix[i - 1][j - 1] = atoi(parsed.c_str());
+					}
+					j++;
+				}
+			}
+			i++;
+		}
+	}
+}
+
+// TRACE BACK
+void NeedlemanWunsch::dna_align()
+{
+	enum AminoAcid amino = MINSCORE;
+	int gap_penalty = _subsitition_matrix[0][amino];
+	_alignment_a = "";
+	_alignment_b = "";
+	_signs = "";
+
+	size_t i = _length_of_a;
+	size_t j = _length_of_b;
+	while (i > 0 || j > 0)
+	{
+		if (i > 0 && j > 0
+			&& (_similarity_matrix[i][j] ==
+				_similarity_matrix[i - 1][j - 1]
+				+ _subsitition_matrix[_dna_int_map[_dna_a[i - 1]]][_dna_int_map[_dna_b[j - 1]]]))
+		{
+			_alignment_a = _dna_a[i - 1] + _alignment_a;
+			_alignment_b = _dna_b[j - 1] + _alignment_b;
+
+			if (_subsitition_matrix[_dna_int_map[_dna_a[i - 1]]][_dna_int_map[_dna_b[j - 1]]] > 0)
+			{
+				if (_dna_a[i - 1] != _dna_b[j - 1])
+				{
+					_signs = ":" + _signs;
+				}
+				else
+				{
+					_signs = "|" + _signs;
+					_identity += 1;
+				}
+				_similarity += 1;
+			}
+			else
+			{
+				_signs = "." + _signs;
+			}
+
+			i -= 1;
+			j -= 1;
+		}
+		else if (i > 0
+			&& _similarity_matrix[i][j] == (_similarity_matrix[i - 1][j] + gap_penalty))
+		{
+			_alignment_a = _dna_a[i - 1] + _alignment_a;
+			_alignment_b = '-' + _alignment_b;
+			_signs = " " + _signs;
+			_gaps += 1;
+
+			i -= 1;
+		}
+		else
+		{
+			_alignment_a = '-' + _alignment_a;
+			_alignment_b = _dna_b[j - 1] + _alignment_b;
+			_signs = " " + _signs;
+			_gaps += 1;
+
+			j -= 1;
+		}
+	}
+}
+
+void NeedlemanWunsch::print_results()
+{
+	cout << _similarity_matrix[102][138];
+	cout << "\nAlignment: \n\n";
+	for (size_t i = 0; i < _alignment_a.length(); i++)
+	{
+		cout << _alignment_a[i];
+	}
+	cout << "\n";
+
+	int gaps = 0, identity = 0;
+	for (size_t i = 0; i < _alignment_a.length(); i++)
+	{
+		cout << _signs[i];
+	}
+	cout << "\n";
+
+	for (size_t i = 0; i < _alignment_b.length(); i++)
+	{
+		cout << _alignment_b[i];
+	}
+	cout << "\n";
+	cout << setfill(' ') << setw(50) << "\n";
+
+	double percentage;
+	cout << "Score = " << _similarity_matrix[_length_of_a][_length_of_b] << "\n";
+
+	cout << "Length = " << _alignment_a.length() << " (with gaps)\n";
+
+	percentage = ((double)_identity / (double)_alignment_a.length()) * 100;
+	cout << "Identity = " << _identity << "/" <<_alignment_a.length() << " ( %" << percentage << " ) " << "\n";
+
+	percentage = ((double)_similarity / (double)_alignment_a.length()) * 100;
+	cout << "Similarity = " << _similarity << "/" << _alignment_a.length() <<" ( %" << percentage << " ) " << "\n";
+
+	percentage = ((double)_gaps / (double)_alignment_a.length()) * 100;
+	cout << "Gaps = " << _gaps << "/" << _alignment_a.length() << " ( %" << percentage << " ) " << "\n";
+}
+
+int main(int argc, char **argv) 
+{
+	fstream compare_one, compare_two;
+	if (argc != 3) 
+	{
+		cout << "Using default values! \n";
+		compare_one.open("dogprotein.fasta");
+		compare_two.open("hyenaprotein.fasta");
+	}
+	else
+	{
+		compare_one.open(argv[1]);
+		compare_one.open(argv[2]);
+	}
+
+	
+	if (!compare_one || !compare_two)
+	{
+		std::cerr << "Error (2) = Necessary files not found! \n";
+		exit(2);
+	}
+	
+	std::string dna_a = "", dna_b = "", line;
+	for (int i = 0; std::getline(compare_one, line); i++)
+	{
+		if (i != 0) 
+		{
+			dna_a += line;
+		}
+	}
+
+	for (int i = 0; std::getline(compare_two, line); i++)
+	{
+		if (i != 0)
+		{
+			dna_b += line;
+		}
+	}
+
+	// FINALLY USING THE ALGORITHM
+	NeedlemanWunsch *nw = new NeedlemanWunsch(dna_a, dna_b);
+	nw->populate_subs_matrix("BLOSUM.txt");
+	nw->calculate_similarity();
+	nw->dna_align();
+	nw->print_results();
+	getchar();
+	return EXIT_SUCCESS;
+}
